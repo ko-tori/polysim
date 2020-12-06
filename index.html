@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel="preconnect" href="https://fonts.gstatic.com">
+	<link href="https://fonts.googleapis.com/css2?family=Abel&display=swap" rel="stylesheet">
+	<title>Polygon Sim</title>
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+	<script type="text/javascript" src="main.js"></script>
+
+	<style type="text/css">
+		body {
+			margin: 0;
+			overflow: hidden;
+			font-family: 'Abel', sans-serif;
+			font-size: 2em;
+		}
+
+		.btn {
+			border-radius: 5px;
+			background-color: #aaa;
+			width: 15vh;
+			height: 15vh;
+			margin-top: 10px;
+			cursor: pointer;
+			user-select: none;
+			opacity: 0.5;
+			text-align: center;
+			display: table;
+		}
+
+		.btn span {
+			display: table-cell;
+			vertical-align: middle;
+		}
+
+		#ui {
+			position: absolute;
+			right: 0;
+			top: 0;
+			padding: 10px;
+		}
+
+		#coords {
+			position: absolute;
+			left: 0;
+			top: 0;
+			padding: 10px;
+			user-select: none;
+			cursor: none;
+		}
+
+		#debug {
+			position: absolute;
+			left: 0;
+			bottom: 0;
+			padding: 10px;
+		}
+
+		.selected {
+			opacity: 1;
+		}
+
+		#canvas {
+			cursor: none;
+		}
+	</style>
+</head>
+<body>
+<canvas id='canvas'></canvas>
+<div id='coords'>(0, 0)</div>
+<div id='debug'></div>
+<div id='ui'>
+	<div id='selectbutton' class='btn selected'><span>Select</span></div>
+	<div id='polybutton' class='btn'><span>Draw Polygon</span></div>
+</div>
+</body>
+</html>
