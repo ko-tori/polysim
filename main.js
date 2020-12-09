@@ -18,7 +18,7 @@ var centerCoord = [0, 0];
 var pixelsPerCoord = 25;
 
 function resetAnimParams() {
-	windingAnimParams = [0, 0, 0, 0, 0, 0, 0];
+	windingAnimParams = [0, 0, 0, 0, 0, 0, 0, [], 0];
 }
 
 resetAnimParams();
@@ -97,6 +97,7 @@ function updateWinding(dt=0) {
 						if (change != 0) {
 							windingAnimParams[4] = (o[0] - p[0]) / (q[0] - p[0]);
 							windingAnimParams[5] = change;
+							windingAnimParams[7].push([[o[0], p[1] + windingAnimParams[4] * (q[1] - p[1])], change == 1 ? '+' : '-']);
 							//console.log('edge from', p, 'to', q, 'crosses', change);
 						} else {
 							windingAnimParams[4] = 0;
@@ -109,6 +110,7 @@ function updateWinding(dt=0) {
 					windingAnimParams[3] += 0.002 * dt;
 					if (prev < windingAnimParams[4] && windingAnimParams[3] > windingAnimParams[4]) {
 						windingAnimParams[6] += windingAnimParams[5];
+						windingAnimParams[8]++;
 					}
 				}
 			}
@@ -231,6 +233,22 @@ function render(curTime) {
 					ctx.strokeStyle = 'rgb(0, 255, 0)';
 					ctx.lineWidth = 3 / pixelsPerCoord;
 					drawPolygon(ctx, poly);
+				}
+
+				ctx.strokeStyle = '#000';
+				ctx.lineWidth = 1 / pixelsPerCoord;
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.font = (15 / pixelsPerCoord) + 'px sans-serif';
+				for (let i = 0; i < windingAnimParams[8]; i++) {
+					let p = windingAnimParams[7][i][0];
+					ctx.beginPath();
+					ctx.arc(p[0], p[1], 10 / pixelsPerCoord, 0, 2 * Math.PI);
+					ctx.fillStyle = '#FFF';
+					ctx.fill();
+					ctx.stroke();
+					ctx.fillStyle = '#000';
+					ctx.fillText(windingAnimParams[7][i][1], p[0], p[1]);
 				}
 			}
 		}

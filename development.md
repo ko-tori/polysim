@@ -14,3 +14,4 @@
 - implement deleting polygons (select then delete)
 - implement winding number animations
 - implement a couple ui improvements
+- add intersection indicators to the winding number animation
