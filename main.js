@@ -8,6 +8,7 @@ var windowWidth = 0;
 var windowHeight = 0;
 var clickedLocation = [0, 0];
 var polygons = [];
+var selectedPolygonIndex = -1;
 var newPoly;
 var bounds;
 
@@ -15,8 +16,25 @@ var centerCoord = [0, 0];
 //var cellSize = 10;
 var pixelsPerCoord = 25;
 
-class Polygon {
-	
+function windingNumber(P, o) {
+	let wind = 0;
+	let n = P.length;
+	for (let i = 0; i < n; i++) {
+		let p = P[i];
+		let q = P[(i + 1) % n];
+		console.log(`edge from ${p} to ${q}`);
+		let d = (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+		console.log('delta:', d)
+		if (p[0] <= o[0] && o[0] < q[0] && d > 0) {
+			console.log('winding number increased')
+			wind += 1;
+		} else if (q[0] <= o[0] && o[0] < p[0] && d < 0) {
+			wind -= 1;
+			console.log('winding number decreased')
+		}
+	}
+
+	return wind;
 }
 
 function toolButtonSelected(toolBtn, toolName) {
@@ -29,9 +47,22 @@ function toolButtonSelected(toolBtn, toolName) {
 	}
 }
 
+function selectPolygon(x, y) {
+	let n = polygons.length;
+	for (let i = 1; i <= n; i++) {
+		let j = (selectedPolygonIndex + i) % n;
+		let poly = polygons[j];
+		if (isOnPath(poly, [x, y])) {
+			selectedPolygonIndex = j;
+			return;
+		}
+	}
+	selectedPolygonIndex = -1;
+}
+
 function gridConvert(px, py) {
 	return [(px - windowWidth / 2) / pixelsPerCoord + centerCoord[0], 
-			(py - windowHeight / 2) / pixelsPerCoord + centerCoord[1]];
+			(-windowHeight / 2 + py) / pixelsPerCoord + centerCoord[1]];
 }
 
 function loop() {
@@ -90,6 +121,7 @@ function drawGrid(ctx) {
 }
 
 function drawPolys(ctx) {
+	ctx.lineJoin = 'round';
 	ctx.strokeStyle = '#00F';
 	ctx.lineWidth = 2 / pixelsPerCoord;
 	if (newPoly && newPoly.length > 0) {
@@ -98,11 +130,16 @@ function drawPolys(ctx) {
 		ctx.moveTo(...newPoly[newPoly.length - 1]);
 		ctx.lineTo(Math.round(mouseGridX), Math.round(mouseGridY));
 		ctx.stroke();
+		drawPolygonPoints(ctx, newPoly);
 	}
 
 	ctx.lineWidth = 2 / pixelsPerCoord;
-	for (let poly of polygons) {
+	for (let i = 0; i < polygons.length; i++) {
+		let poly = polygons[i];
+		ctx.strokeStyle = i == selectedPolygonIndex ? '#F00' : '#00F';
 		drawPolygon(ctx, poly);
+		ctx.strokeStyle = '#000';
+		drawPolygonPoints(ctx, poly);
 	}
 }
 
@@ -122,6 +159,14 @@ function drawPolygon(ctx, poly, complete=true) {
 
 	if (inbounds) {
 		ctx.stroke();
+	}	
+}
+
+function drawPolygonPoints(ctx, poly) {
+	for (let [x, y] of poly) {
+		ctx.beginPath();
+		ctx.arc(x, y, 3 / pixelsPerCoord, 0, 2 * Math.PI);
+		ctx.fill();
 	}
 }
 
@@ -141,6 +186,18 @@ function isCollinear(a, b, c, inbetween=false) {
 		&& (!inbetween || (c[0] >= Math.min(a[0], b[0]) && c[0] <= Math.max(a[0], b[0]) && c[1] >= Math.min(a[1], b[1]) && c[1] <= Math.max(a[1], b[1])));
 }
 
+function isOnPath(path, p, closed=true) {
+	let n = path.length;
+	for (let i = 0; i < n; i++) {
+		if (!closed && i == n - 1) return false;
+		if (isCollinear(path[i], path[(i + 1) % n], p, true)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 $(document).ready(function() {
 	resizeWindow();
 
@@ -150,6 +207,10 @@ $(document).ready(function() {
 
 	$('#polybutton').click(function() {
 		toolButtonSelected(this, 'poly');
+	});
+
+	$('#windingbutton').click(function() {
+		toolButtonSelected(this, 'winding');
 	});
 
 	window.addEventListener('resize', resizeWindow);
@@ -163,6 +224,7 @@ $(document).ready(function() {
 
 	$(document).mousedown(function(e) {
 		mouseDown = true;
+		mouseMoved = false;
 		clickedLocation = [mouseGridX, mouseGridY];
 
 		if (e.target.tagName == 'CANVAS') {
@@ -173,9 +235,9 @@ $(document).ready(function() {
 					if (newPoly && newPoly.length > 0) {
 						let n = newPoly.length;
 						for (let i = 0; i < n - 1; i++) {
-							console.log(isCollinear(newPoly[n - 1], [x, y], newPoly[i], true));
+							// console.log(isCollinear(newPoly[n - 1], [x, y], newPoly[i], true));
 							if (isCollinear(newPoly[n - 1], [x, y], newPoly[i], true)) {
-								console.log('causing collinearity with point', i)
+								console.log('causing collinearity with point', i);
 								if (!(i == 0 && x == newPoly[0][0] && y == newPoly[0][1])) {
 									console.log('ignored point that would cause previous point to be in between collinear');
 									return;
@@ -221,9 +283,17 @@ $(document).ready(function() {
 
 	$(document).mouseup(function() {
 		mouseDown = false;
+		if (!mouseMoved && currentTool == 'select') {
+			let x = Math.round(mouseGridX);
+			let y = Math.round(mouseGridY);
+			selectPolygon(x, y);
+		}
 	});
 
 	$(document).mousemove(function(e) {
+		if (mouseDown) {
+			mouseMoved = true;
+		}
 		prevPageX = mousePageX;
 		prevPageY = mousePageY;
 		prevGridX = mouseGridX;
@@ -235,6 +305,15 @@ $(document).ready(function() {
 		if (currentTool == 'select' && mouseDown) {
 			centerCoord[0] += (prevPageX - mousePageX) / pixelsPerCoord;
 			centerCoord[1] += (prevPageY - mousePageY) / pixelsPerCoord;
+		}
+	});
+
+	$(document).keydown(function(e) {
+		if (e.keyCode == 46) {
+			if (selectedPolygonIndex != -1) {
+				polygons.splice(selectedPolygonIndex, 1);
+				selectedPolygonIndex = -1;
+			}
 		}
 	});
 

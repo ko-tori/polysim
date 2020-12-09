@@ -1,0 +1,14 @@
+- set up basic webpage
+- fullscreen canvas and buttons on top for tools
+- add update and render loop
+- transform canvas for drawing, draw grid on canvas within window bounds with 1x1 cells
+- listeners for window resize events, mouse up/down, move, etc.
+- allow moving grid around
+- allow selecting points in a row to draw polygon, clicking on the initial point closes the curve
+- with collinearity/betweenness test, implement disallowing points that are:
+	- previously used points on the polygon
+	- lie on previous edges in the polygon
+- implement basic winding number function from class
+- flip coordinate plane so it's similar to the familiar positive coords are top right
+- implement selecting polygons (must click on a point that is exactly on the polygon's path)
+- implement deleting polygons (select then delete)
