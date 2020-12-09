@@ -56,6 +56,17 @@
 			padding: 10px;
 		}
 
+		#info {
+			position: absolute;
+			bottom: 10%;
+			left: 50%;
+			transform: translateX(-50%);
+			user-select: none;
+			cursor: none;
+			display: none;
+			font-size: 2em;
+		}
+
 		.selected {
 			opacity: 1;
 		}
@@ -69,6 +80,7 @@
 <canvas id='canvas'></canvas>
 <div id='coords'>(0, 0)</div>
 <div id='debug'></div>
+<div id='info'>test</div>
 <div id='ui'>
 	<div id='selectbutton' class='btn selected'><span>Select</span></div>
 	<div id='polybutton' class='btn'><span>Draw Polygon</span></div>
