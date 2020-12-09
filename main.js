@@ -57,7 +57,10 @@ function updateWinding(dt=0) {
 	} else if (selectedPoints.length == 0) {
 		displayInfo('Select a point');
 	} else {
-		if (windingAnimParams[1] == 0) {
+		if (isOnPath(polygons[selectedPolygonIndex], selectedPoints[0])) {
+			displayInfo('Point must not be on polygon boundary');
+			return;
+		} else if (windingAnimParams[1] == 0) {
 			let min = polygons[selectedPolygonIndex][0][1];
 			for (let [x, y] of polygons[selectedPolygonIndex]) {
 				if (y < min) min = y;
@@ -407,7 +410,7 @@ $(document).ready(function() {
 
 	$(document).mouseup(function(e) {
 		mouseDown = false;
-		if (e.target.tagName == 'CANVAS') {
+		if (e.target.classList.contains('inputtable')) {
 			let x = Math.round(mouseGridX);
 			let y = Math.round(mouseGridY);
 			if (!mouseMoved && currentTool == 'select') {
@@ -423,7 +426,7 @@ $(document).ready(function() {
 						for (let i = 0; i < n - 1; i++) {
 							// console.log(isCollinear(newPoly[n - 1], [x, y], newPoly[i], true));
 							if (isCollinear(newPoly[n - 1], [x, y], newPoly[i], true)) {
-								console.log('causing collinearity with point', i);
+								//console.log('causing collinearity with point', i);
 								if (!(i == 0 && x == newPoly[0][0] && y == newPoly[0][1])) {
 									console.log('ignored point that would cause previous point to be in between collinear');
 									return;

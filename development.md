@@ -12,3 +12,5 @@
 - flip coordinate plane so it's similar to the familiar positive coords are top right
 - implement selecting polygons (must click on a point that is exactly on the polygon's path)
 - implement deleting polygons (select then delete)
+- implement winding number animations
+- implement a couple ui improvements
