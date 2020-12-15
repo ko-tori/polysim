@@ -378,7 +378,7 @@ function renderTriangulate(ctx) {
 			ctx.strokeStyle = 'rgba(0, 0, 255, 0.8)';
 			ctx.beginPath();
 			ctx.moveTo(...s.P[s.i]);
-			ctx.lineTo(...s.P[s.j]);
+			ctx.lineTo(...s.P[s.j%n]);
 			ctx.stroke();
 
 			ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
@@ -567,6 +567,10 @@ function isSelfIntersecting(poly) {
 }
 
 function intersect(a, b, c, d) {
+	// checks if the segments overlap. still has an issue (if segments overlap by an endpoint returns true)
+	if (isCollinear(a, b, c) && isCollinear(a, b, d)) {
+		return isCollinear(a, b, c, true) || isCollinear(a, b, d, true);
+	}
 	if (isCollinearOpen(a, b, c) || isCollinearOpen(a, b, d)) {
 		return isCollinearOpen(a, b, c, true) || isCollinearOpen(a, b, d, true);
 	}
