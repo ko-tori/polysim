@@ -12,13 +12,31 @@ var selectedPoints = [];
 var newPoly;
 var bounds;
 var windingAnimParams;
+var triangAnimParams;
+
+const triangulationStepTimeMs = 400;
 
 var centerCoord = [0, 0];
 //var cellSize = 10;
 var pixelsPerCoord = 25;
 
 function resetAnimParams() {
-	windingAnimParams = [0, 0, 0, 0, 0, 0, 0, [], 0];
+	windingAnimParams = {
+		rayProgress: 0,
+		rayHeight: 0,
+		currentEdge: 0,
+		edgeProgress: 0,
+		intersectionTime: 0,
+		intersectionDirection: 0,
+		windingNumber: 0,
+		intersectionList: [],
+		intersectionListIndex: 0
+	};
+	triangAnimParams = {
+		diagonals: [],
+		subcalls: [],
+		done: false
+	};
 }
 
 resetAnimParams();
@@ -45,7 +63,8 @@ function windingNumber(P, o) {
 }
 
 function updateWinding(dt=0) {
-	displayInfo('Winding Number: ' + windingAnimParams[6]);
+	let w = windingAnimParams;
+	displayInfo('Winding Number: ' + w.windingNumber);
 	if (selectedPolygonIndex == -1) {
 		if (polygons.length == 1) {
 			selectedPolygonIndex = 0;
@@ -60,31 +79,31 @@ function updateWinding(dt=0) {
 		if (isOnPath(polygons[selectedPolygonIndex], selectedPoints[0])) {
 			displayInfo('Point must not be on polygon boundary');
 			return;
-		} else if (windingAnimParams[1] == 0) {
+		} else if (w.rayHeight == 0) {
 			let min = polygons[selectedPolygonIndex][0][1];
 			for (let [x, y] of polygons[selectedPolygonIndex]) {
 				if (y < min) min = y;
 			}
-			windingAnimParams[1] = min - selectedPoints[0][1] - 2;
-			if (windingAnimParams[1] > 0) windingAnimParams[1] = -2;
+			w.rayHeight = min - selectedPoints[0][1] - 2;
+			if (w.rayHeight > 0) w.rayHeight = -2;
 		}
-		if (windingAnimParams[0] < 1) {
-			windingAnimParams[0] += 0.002 * dt;
+		if (w.rayProgress < 1) {
+			w.rayProgress += 0.002 * dt;
 		} else {
-			if (windingAnimParams[2] < polygons[selectedPolygonIndex].length) {
-				if (windingAnimParams[3] > 1) {
-					windingAnimParams[2]++;
-					windingAnimParams[3] = 0;
+			if (w.currentEdge < polygons[selectedPolygonIndex].length) {
+				if (w.edgeProgress > 1) {
+					w.currentEdge++;
+					w.edgeProgress = 0;
 				}
-				if (windingAnimParams[2] >= polygons[selectedPolygonIndex].length) {
+				if (w.currentEdge >= polygons[selectedPolygonIndex].length) {
 					// done
 				} else {
-					if (windingAnimParams[3] == 0) {
+					if (w.edgeProgress == 0) {
 						let P = polygons[selectedPolygonIndex];
 						let n = P.length;
-						let i = windingAnimParams[2];
+						let i = w.currentEdge;
 						let o = selectedPoints[0];
-						o[0] += 0.0001;	
+						o[0] += 0.0001; // perturb
 						let p = P[i];
 						let q = P[(i + 1) % n];
 						let d = (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
@@ -95,22 +114,22 @@ function updateWinding(dt=0) {
 							change = -1;
 						}
 						if (change != 0) {
-							windingAnimParams[4] = (o[0] - p[0]) / (q[0] - p[0]);
-							windingAnimParams[5] = change;
-							windingAnimParams[7].push([[o[0], p[1] + windingAnimParams[4] * (q[1] - p[1])], change == 1 ? '+' : '-']);
+							w.intersectionTime = (o[0] - p[0]) / (q[0] - p[0]);
+							w.intersectionDirection = change;
+							w.intersectionList.push([[o[0], p[1] + w.intersectionTime * (q[1] - p[1])], change == 1 ? '+' : '-']);
 							//console.log('edge from', p, 'to', q, 'crosses', change);
 						} else {
-							windingAnimParams[4] = 0;
-							windingAnimParams[5] = 0;
+							w.intersectionTime = 0;
+							w.intersectionDirection = 0;
 							//console.log('edge from', p, 'to', q, 'does not cross');
 						}
 					}
 
-					let prev = windingAnimParams[3];
-					windingAnimParams[3] += 0.002 * dt;
-					if (prev < windingAnimParams[4] && windingAnimParams[3] > windingAnimParams[4]) {
-						windingAnimParams[6] += windingAnimParams[5];
-						windingAnimParams[8]++;
+					let prev = w.edgeProgress;
+					w.edgeProgress += 0.002 * dt;
+					if (prev < w.intersectionTime && w.edgeProgress > w.intersectionTime) {
+						w.windingNumber += w.intersectionDirection;
+						w.intersectionListIndex++;
 					}
 				}
 			}
@@ -119,7 +138,91 @@ function updateWinding(dt=0) {
 	}
 }
 
+function newTriangulationSubcall(p) {
+	triangAnimParams.subcalls.push({
+		P: p,
+		i: 0,
+		j: 2,
+		k: 0,
+		d: true,
+		t: 0,
+		done: false
+	});
+}
+
+function updateTriangulate(dt=0) {
+	displayInfo('');
+	let t = triangAnimParams;
+	if (selectedPolygonIndex == -1) {
+		if (polygons.length == 1 && polygons[0].length > 3 && !isSelfIntersecting(polygons[0])) {
+			selectedPolygonIndex = 0;
+		} else if (polygons.length == 0) {
+			displayInfo('Draw a polygon first');
+		} else {
+			displayInfo('Select a simple polygon (>3 vertices)');
+		}
+	} else if (polygons[selectedPolygonIndex].length <= 3) {
+		displayInfo('Selected polygon is a triangle!');
+	} else if (isSelfIntersecting(polygons[selectedPolygonIndex])) {
+		displayInfo('Selected polygon is self-intersecting!');
+	} else if (t.done) {
+
+	} else {
+		if (t.subcalls.length == 0) {
+			newTriangulationSubcall(polygons[selectedPolygonIndex]);
+		}
+
+		for (let s of t.subcalls) {
+			let n = s.P.length;
+			if (n <= 3) {
+				s.done = true;
+				//console.log('subcall of size', n, 'finished');
+			} else if (s.t < triangulationStepTimeMs) {
+				s.t += dt;
+			} else {
+				//console.log(n, s)
+				s.t = 0;
+				let r = intersect(s.P[s.i], s.P[s.j % n], s.P[s.k], s.P[(s.k + 1) % n]);
+				//console.log('checking if', s.P[s.i], s.P[s.j % n], 'intersects with', s.P[s.k], s.P[(s.k + 1) % n]);
+				//console.log(r);
+				s.d = s.d & !r;
+
+				s.k++;
+				if (s.k >= n || !s.d) {
+					let midx = (s.P[s.i][0] + s.P[s.j][0]) / 2;
+					let midy = (s.P[s.i][1] + s.P[s.j][1]) / 2;
+					if (s.d && windingNumber(s.P, [midx, midy]) != 0) {
+						t.diagonals.push([s.P[s.i], s.P[s.j]]);
+						s.done = true;
+						//console.log('subcall of size', n, 'finished');
+						newTriangulationSubcall(s.P.slice(0, s.i + 1).concat(s.P.slice(s.j, n)));
+						newTriangulationSubcall(s.P.slice(s.i, s.j+1));
+					} else {
+						s.d = true;
+						s.k = 0;
+						s.j++;
+						if (s.j > s.i + n - 2) {
+							s.i++;
+							if (s.i >= n) {
+								console.log('Failed to find a triangulation'); // this should be impossible
+								s.done = true;
+							}
+							s.j = s.i + 2;
+						}
+					}
+				}
+			}
+		}
+
+		t.subcalls = t.subcalls.filter(x => !x.done);
+		if (t.subcalls.length == 0) {
+			t.done = true;
+		}
+	}
+}
+
 function toolButtonSelected(toolBtn, toolName) {
+	let prevTool = currentTool;
 	currentTool = toolName;
 	$('.btn').removeClass('selected');
 	$(toolBtn).addClass('selected');
@@ -131,9 +234,16 @@ function toolButtonSelected(toolBtn, toolName) {
 	hideInfo();
 	selectedPoints = [];
 
-	if (toolName == 'winding') {
+	if (prevTool != currentTool) {
 		resetAnimParams();
+	}
+
+	if (toolName == 'winding') {
 		updateWinding();
+	}
+
+	if (toolName == 'triangulate') {
+		updateTriangulate();
 	}
 }
 
@@ -171,21 +281,116 @@ function gridConvert(px, py) {
 			(windowHeight / 2 - py) / pixelsPerCoord + centerCoord[1]];
 }
 
+var prevTime = 0;
+
 function loop(curTime) {
-	update(curTime);
-	render(curTime);
+	let dt = curTime - prevTime;
+	prevTime = curTime;	
+	update(dt);
+	render(dt);
 	window.requestAnimationFrame(loop);
 }
 
-function update() {
-
+function update(dt) {
+	if (currentTool == 'winding') {
+		updateWinding(dt);
+	} else if (currentTool == 'triangulate') {
+		updateTriangulate(dt);
+	}
 }
 
-var prevTime = 0;
+function renderWinding(ctx) {
+	let w = windingAnimParams;
+	ctx.fillStyle = 'rgba(0, 0, 255, 1)';
+	ctx.strokeStyle = 'rgba(0, 0, 255, 0.5)';
+	if (selectedPoints[0]) {
+		let [x, y] = selectedPoints[0];
+		let rayHeight = w.rayProgress * w.rayHeight;
+		ctx.beginPath();
+		ctx.arc(x, y, 1 / pixelsPerCoord * 3, 0, 2 * Math.PI);
+		ctx.fill();
+		ctx.beginPath();
+		ctx.moveTo(x, y);
+		ctx.lineTo(x, y + rayHeight);
+		ctx.moveTo(x - 4 / pixelsPerCoord, y + rayHeight + 4 / pixelsPerCoord);
+		ctx.lineTo(x, y + rayHeight);
+		ctx.lineTo(x + 4 / pixelsPerCoord, y + rayHeight + 4 / pixelsPerCoord);
+		ctx.stroke();
 
-function render(curTime) {
-	let dt = curTime - prevTime;
-	prevTime = curTime;	
+		if (w.rayProgress >= 1) {
+			let poly = polygons[selectedPolygonIndex];
+			if (w.currentEdge < poly.length) {
+				ctx.strokeStyle = 'rgb(0, 255, 0)';
+				ctx.lineWidth = 3 / pixelsPerCoord;
+				ctx.beginPath();
+				ctx.moveTo(poly[0][0], poly[0][1]);
+				for (let i = 1; i <= w.currentEdge; i++) {
+					ctx.lineTo(poly[i][0], poly[i][1]);
+				}
+				
+				let p = poly[w.currentEdge];
+				let q = poly[(w.currentEdge + 1) % poly.length];
+				ctx.lineTo(p[0] + (q[0] - p[0]) * w.edgeProgress, p[1] + (q[1] - p[1]) * w.edgeProgress);
+
+				ctx.stroke();
+			} else if (w.currentEdge == poly.length) {
+				ctx.strokeStyle = 'rgb(0, 255, 0)';
+				ctx.lineWidth = 3 / pixelsPerCoord;
+				drawPolygon(ctx, poly);
+			}
+
+			ctx.save();
+			ctx.strokeStyle = '#000';
+			ctx.lineWidth = 1 / pixelsPerCoord;
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.font = (15 / pixelsPerCoord) + 'px sans-serif';
+			ctx.globalAlpha = 0.8;
+			for (let i = 0; i < w.intersectionListIndex; i++) {
+				let p = w.intersectionList[i][0];
+				ctx.beginPath();
+				ctx.arc(p[0], p[1], 10 / pixelsPerCoord, 0, 2 * Math.PI);
+				ctx.fillStyle = '#FFF';
+				ctx.fill();
+				ctx.stroke();
+				ctx.fillStyle = '#000';
+				ctx.fillText(w.intersectionList[i][1], p[0], p[1]);
+			}
+			ctx.restore();
+		}
+	}
+}
+
+function renderTriangulate(ctx) {
+	let t = triangAnimParams;
+	ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+	ctx.beginPath();
+	for (let [p1, p2] of t.diagonals) {
+		ctx.moveTo(...p1);
+		ctx.lineTo(...p2);
+	}
+	ctx.stroke();
+
+	if (!t.done) {
+		for (let s of t.subcalls) {
+			let n = s.P.length;
+
+			ctx.strokeStyle = 'rgba(0, 0, 255, 0.8)';
+			ctx.beginPath();
+			ctx.moveTo(...s.P[s.i]);
+			ctx.lineTo(...s.P[s.j]);
+			ctx.stroke();
+
+			ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
+			ctx.beginPath();
+			ctx.moveTo(...s.P[s.k]);
+			ctx.lineTo(...s.P[(s.k+1) % n]);
+			ctx.stroke();
+		}
+	}
+}
+
+function render() {
 	let canvas = document.getElementById('canvas');
 	let ctx = canvas.getContext('2d');
 	ctx.clearRect(0, 0, windowWidth, windowHeight);
@@ -197,62 +402,9 @@ function render(curTime) {
 	drawPolys(ctx);
 
 	if (currentTool == 'winding') {
-		ctx.fillStyle = 'rgba(0, 0, 255, 1)';
-		ctx.strokeStyle = 'rgba(0, 0, 255, 0.5)';
-		if (selectedPoints[0]) {
-			let [x, y] = selectedPoints[0];
-			let rayHeight = windingAnimParams[0] * windingAnimParams[1];
-			ctx.beginPath();
-			ctx.arc(x, y, 1 / pixelsPerCoord * 3, 0, 2 * Math.PI);
-			ctx.fill();
-			ctx.beginPath();
-			ctx.moveTo(x, y);
-			ctx.lineTo(x, y + rayHeight);
-			ctx.moveTo(x - 4 / pixelsPerCoord, y + rayHeight + 4 / pixelsPerCoord);
-			ctx.lineTo(x, y + rayHeight);
-			ctx.lineTo(x + 4 / pixelsPerCoord, y + rayHeight + 4 / pixelsPerCoord);
-			ctx.stroke();
-
-			if (windingAnimParams[0] >= 1) {
-				let poly = polygons[selectedPolygonIndex];
-				if (windingAnimParams[2] < poly.length) {
-					ctx.strokeStyle = 'rgb(0, 255, 0)';
-					ctx.lineWidth = 3 / pixelsPerCoord;
-					ctx.beginPath();
-					ctx.moveTo(poly[0][0], poly[0][1]);
-					for (let i = 1; i <= windingAnimParams[2]; i++) {
-						ctx.lineTo(poly[i][0], poly[i][1]);
-					}
-					
-					let p = poly[windingAnimParams[2]];
-					let q = poly[(windingAnimParams[2] + 1) % poly.length];
-					ctx.lineTo(p[0] + (q[0] - p[0]) * windingAnimParams[3], p[1] + (q[1] - p[1]) * windingAnimParams[3]);
-
-					ctx.stroke();
-				} else if (windingAnimParams[2] == poly.length) {
-					ctx.strokeStyle = 'rgb(0, 255, 0)';
-					ctx.lineWidth = 3 / pixelsPerCoord;
-					drawPolygon(ctx, poly);
-				}
-
-				ctx.strokeStyle = '#000';
-				ctx.lineWidth = 1 / pixelsPerCoord;
-				ctx.textAlign = 'center';
-				ctx.textBaseline = 'middle';
-				ctx.font = (15 / pixelsPerCoord) + 'px sans-serif';
-				for (let i = 0; i < windingAnimParams[8]; i++) {
-					let p = windingAnimParams[7][i][0];
-					ctx.beginPath();
-					ctx.arc(p[0], p[1], 10 / pixelsPerCoord, 0, 2 * Math.PI);
-					ctx.fillStyle = '#FFF';
-					ctx.fill();
-					ctx.stroke();
-					ctx.fillStyle = '#000';
-					ctx.fillText(windingAnimParams[7][i][1], p[0], p[1]);
-				}
-			}
-		}
-		updateWinding(dt);
+		renderWinding(ctx);
+	} else if (currentTool == 'triangulate') {
+		renderTriangulate(ctx);
 	}
 
 	ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
@@ -385,6 +537,45 @@ function isCollinear(a, b, c, inbetween=false) {
 		&& (!inbetween || (c[0] >= Math.min(a[0], b[0]) && c[0] <= Math.max(a[0], b[0]) && c[1] >= Math.min(a[1], b[1]) && c[1] <= Math.max(a[1], b[1])));
 }
 
+function isCollinearOpen(a, b, c, inbetween=false) {
+	// three points are collinear if their slopes are the same (c[1]-a[1])/(c[0]-a[0]) == (c[1]-b[1])/(c[0]-b[0])
+	// cross multiply to remove divisions that might cause error
+	// inbetween will make the function only return true if c is between a and b
+	return (c[1] - a[1]) * (c[0] - b[0]) == (c[1] - b[1]) * (c[0] - a[0])
+		&& (!inbetween || (c[0] > Math.min(a[0], b[0]) && c[0] < Math.max(a[0], b[0]) && c[1] > Math.min(a[1], b[1]) && c[1] < Math.max(a[1], b[1])));
+}
+
+function isCounterClockwise(a, b, c) {
+	return (c[1]-a[1]) * (b[0]-a[0]) > (b[1]-a[1]) * (c[0]-a[0])
+}
+
+function comparePoints(a, b) {
+	return a[0] == b[0] && a[1] == b[1];
+}
+
+function isSelfIntersecting(poly) {
+	let n = poly.length;
+	for (let i = 0; i < n; i++) {
+		for (let j = i + 1; j < n; j++) {
+			if (intersect(poly[i], poly[(i+1)%n], poly[j], poly[(j+1)%n])) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+function intersect(a, b, c, d) {
+	if (isCollinearOpen(a, b, c) || isCollinearOpen(a, b, d)) {
+		return isCollinearOpen(a, b, c, true) || isCollinearOpen(a, b, d, true);
+	}
+	if (isCollinearOpen(a, c, d) || isCollinearOpen(b, c, d)) {
+		return isCollinearOpen(c, d, a, true) || isCollinearOpen(c, d, b, true);
+	}
+	return isCounterClockwise(a, c, d) != isCounterClockwise(b, c, d) && isCounterClockwise(a, b, c) != isCounterClockwise(a, b, d);
+}
+
 function isOnPath(path, p, closed=true) {
 	let n = path.length;
 	for (let i = 0; i < n; i++) {
@@ -410,6 +601,10 @@ $(document).ready(function() {
 
 	$('#windingbutton').click(function() {
 		toolButtonSelected(this, 'winding');
+	});
+
+	$('#triangulatebutton').click(function() {
+		toolButtonSelected(this, 'triangulate');
 	});
 
 	window.addEventListener('resize', resizeWindow);
@@ -495,6 +690,12 @@ $(document).ready(function() {
 				}
 				updateWinding();
 			}
+
+			if (currentTool == 'triangulate') {
+				if (selectPolygon(x, y, false)) {
+					resetAnimParams();
+				}
+			}
 		}
 	});
 
@@ -518,7 +719,7 @@ $(document).ready(function() {
 
 	$(document).keydown(function(e) {
 		if (e.keyCode == 46) {
-			if (selectedPolygonIndex != -1) {
+			if (currentTool == 'select' && selectedPolygonIndex != -1) {
 				polygons.splice(selectedPolygonIndex, 1);
 				selectedPolygonIndex = -1;
 			}

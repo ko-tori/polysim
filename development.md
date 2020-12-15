@@ -15,3 +15,5 @@
 - implement winding number animations
 - implement a couple ui improvements
 - add intersection indicators to the winding number animation
+- refactor winding animation parameters
+- implement triangulation animation
