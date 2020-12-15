@@ -14,8 +14,6 @@ var bounds;
 var windingAnimParams;
 var triangAnimParams;
 
-const triangulationStepTimeMs = 400;
-
 var centerCoord = [0, 0];
 //var cellSize = 10;
 var pixelsPerCoord = 25;
@@ -30,12 +28,14 @@ function resetAnimParams() {
 		intersectionDirection: 0,
 		windingNumber: 0,
 		intersectionList: [],
-		intersectionListIndex: 0
+		intersectionListIndex: 0,
+		animationSpeed: 0.002
 	};
 	triangAnimParams = {
 		diagonals: [],
 		subcalls: [],
-		done: false
+		done: false,
+		animStepTime: 400
 	};
 }
 
@@ -88,7 +88,7 @@ function updateWinding(dt=0) {
 			if (w.rayHeight > 0) w.rayHeight = -2;
 		}
 		if (w.rayProgress < 1) {
-			w.rayProgress += 0.002 * dt;
+			w.rayProgress += w.animationSpeed * dt;
 		} else {
 			if (w.currentEdge < polygons[selectedPolygonIndex].length) {
 				if (w.edgeProgress > 1) {
@@ -126,7 +126,7 @@ function updateWinding(dt=0) {
 					}
 
 					let prev = w.edgeProgress;
-					w.edgeProgress += 0.002 * dt;
+					w.edgeProgress += w.animationSpeed * dt;
 					if (prev < w.intersectionTime && w.edgeProgress > w.intersectionTime) {
 						w.windingNumber += w.intersectionDirection;
 						w.intersectionListIndex++;
@@ -177,7 +177,7 @@ function updateTriangulate(dt=0) {
 			if (n <= 3) {
 				s.done = true;
 				//console.log('subcall of size', n, 'finished');
-			} else if (s.t < triangulationStepTimeMs) {
+			} else if (s.t < t.animStepTime) {
 				s.t += dt;
 			} else {
 				//console.log(n, s)
@@ -734,6 +734,14 @@ $(document).ready(function() {
 				polygons.splice(selectedPolygonIndex, 1);
 				selectedPolygonIndex = -1;
 			}
+		}
+	});
+
+	window.addEventListener('wheel', e => {
+		if (currentTool == 'winding') {
+			windingAnimParams.animationSpeed /= (1 + Math.sign(e.deltaY) * 0.1);
+		} else if (currentTool == 'triangulate') {
+			triangAnimParams.animStepTime *= (1 + Math.sign(e.deltaY) * 0.1);
 		}
 	});
 

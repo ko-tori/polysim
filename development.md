@@ -18,3 +18,4 @@
 - refactor winding animation parameters
 - implement triangulation animation
 - add clear button
+- scroll wheel to change animation speed
