@@ -17,3 +17,4 @@
 - add intersection indicators to the winding number animation
 - refactor winding animation parameters
 - implement triangulation animation
+- add clear button

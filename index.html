@@ -26,11 +26,13 @@
 			opacity: 0.5;
 			text-align: center;
 			display: table;
+			width: 100%;
 		}
 
 		.btn span {
 			display: table-cell;
 			vertical-align: middle;
+			padding: 5px;
 		}
 
 		#ui {
@@ -75,6 +77,10 @@
 		#canvas {
 			cursor: none;
 		}
+
+		#clearbutton {
+			height: 5vh;
+		}
 	</style>
 </head>
 <body>
@@ -83,9 +89,10 @@
 <div id='debug' class='inputtable'></div>
 <div id='info' class='inputtable'></div>
 <div id='ui'>
+	<div id='clearbutton' class='btn'><span>Clear</span></div>
 	<div id='selectbutton' class='btn selected'><span>Select</span></div>
-	<div id='polybutton' class='btn'><span>Draw Polygon</span></div>
-	<div id='windingbutton' class='btn'><span>Winding Number</span></div>
+	<div id='polybutton' class='btn'><span>Draw<br>Polygon</span></div>
+	<div id='windingbutton' class='btn'><span>Winding<br>Number</span></div>
 	<div id='triangulatebutton' class='btn'><span>Triangulate</span></div>
 </div>
 </body>

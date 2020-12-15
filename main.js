@@ -588,8 +588,19 @@ function isOnPath(path, p, closed=true) {
 	return false;
 }
 
+function clearAll() {
+	polygons = [];
+	resetAnimParams();
+	selectedPolygonIndex = -1;
+	toolButtonSelected($('#selectbutton'), 'select');
+	selectedPoints = [];
+	newPoly = null;
+}
+
 $(document).ready(function() {
 	resizeWindow();
+
+	$('#clearbutton').click(clearAll);
 
 	$('#selectbutton').click(function() {
 		toolButtonSelected(this, 'select');
