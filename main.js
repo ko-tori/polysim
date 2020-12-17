@@ -48,7 +48,9 @@ function resetAnimParams() {
 		stage: 'selectpoly',
 		polyalpha: 1,
 		gridalpha: 1,
-		animStepTime: 400
+		animStepTime: 400,
+		reduceEdge: -1,
+		done: false
 	};
 }
 
@@ -463,62 +465,8 @@ function updateRectification(dt=0) {
 					r.Ptarget.push([hrankq, vrankpq]);
 					r.Ptarget.push([hrankq, vrankqr]);
 				}
-
-				let vertMap = {};
-				let horizMap = {};
-				n = r.Ptarget.length;
-
-				for (let i = 0; i < n; i++) {
-					let p1 = r.Ptarget[i];
-					let p2 = r.Ptarget[(i + 1) % n];
-					let vert = p1[0] == p2[0];
-					let horiz = p1[1] == p2[1];
-					if (!(vert && horiz)) {
-						r.startingVertical = (i % 2) ^ vert;
-						break;
-					}
-				}
-
-				for (let i = 0; i < n; i++) {
-					let p1 = r.Ptarget[i];
-					let p2 = r.Ptarget[(i + 1) % n];
-					let vert = (i % 2) ^ r.startingVertical;
-					// if (vert && horiz) {
-					// 	console.log('zero length edge', p1, p2);
-					// } else 
-					if (vert) {
-						if (!vertMap[p1[0]]) vertMap[p1[0]] = [];
-						vertMap[p1[0]].push(i);
-					} else {
-						if (!horizMap[p1[1]]) horizMap[p1[1]] = [];
-						horizMap[p1[1]].push(i);
-					}
-				}
 				
-				r.perturbance = r.Ptarget.map(x => [0, 0]);
-				for (let inds of Object.values(vertMap)) {
-					let n = inds.length;
-					for (let off = 0; off < n; off++) {
-						let i = inds[off];
-						//console.log('moving vertical edge horizontally', i)
-						r.perturbance[i][0] += off - (n - 1) / 2;
-						r.perturbance[(i + 1) % r.perturbance.length][0] += off - (n - 1) / 2;
-					}
-				}
-
-				console.log(vertMap, horizMap);
-
-				for (let inds of Object.values(horizMap)) {
-					let n = inds.length;
-					for (let off = 0; off < n; off++) {
-						let i = inds[off];
-
-						//console.log('moving horizontal edge vertically', i)
-						r.perturbance[i][1] += off - (n - 1) / 2;
-						r.perturbance[(i + 1) % r.perturbance.length][1] += off - (n - 1) / 2;
-					}
-				}
-				console.log('perturbance:', r.perturbance);
+				calculatePerturbances(r);
 
 				r.Otarget = [];
 				for (let p of selectedPoints) {
@@ -535,7 +483,49 @@ function updateRectification(dt=0) {
 		r.gridalpha = Math.max(0, r.gridalpha - 0.8 / r.animStepTime);
 
 		if (r.t > 1) {
+			r.t = 0;
 			r.stage = 'reduce';
+		}
+	} else if (r.stage == 'reduce') {
+		if (r.t == 0) {
+			let [result, resultType] = findReducibleEdge(r.Ptarget, r.Otarget, r.startingVertical);
+			r.reduceEdge = result;
+			r.reductionType = resultType;
+			if (result != -1) {
+				console.log('found removable edge', result, resultType);
+			} else {
+				r.done = true;
+				console.log('done');
+			}
+		}
+		r.t += 0.8 / r.animStepTime;
+		if (r.t > 1) {
+			let i = r.reduceEdge;
+			let j = (r.reduceEdge + 1) % r.Ptarget.length;
+			if (r.reductionType == 'elide') {
+				console.log('eliding edge', i);
+				if (i == r.Ptarget.length - 1) {
+					r.Ptarget.splice(i, 1);
+					r.Ptarget.splice(0, 1);
+				} else {
+					r.Ptarget.splice(i, 2);
+				}
+			} else if (r.reductionType == 'rightslide') {
+				r.Ptarget[i][0] += 2;
+				r.Ptarget[j][0] += 2;
+			} else if (r.reductionType == 'leftslide') {
+				r.Ptarget[i][0] -= 2;
+				r.Ptarget[j][0] -= 2;
+			} else if (r.reductionType == 'upslide') {
+				r.Ptarget[i][1] += 2;
+				r.Ptarget[j][1] += 2;
+			} else if (r.reductionType == 'downslide') {
+				r.Ptarget[i][1] -= 2;
+				r.Ptarget[j][1] -= 2;
+			}
+			
+			calculatePerturbances(r);
+			r.t = 0;
 		}
 	}
 }
@@ -774,18 +764,11 @@ function renderRectification(ctx) {
 			drawSegmentPoints(ctx, r.S);
 		} else if (r.stage == 'rectify') {
 			ctx.strokeStyle = 'blue';
-			let k = selectedPoints.length;
-			let dim = Math.min(0.75*(bounds[3] - bounds[2]), 0.75*(bounds[1] - bounds[0]));
-			let x0 = bounds[0] + (bounds[1] - bounds[0] - dim) / 2;
-			let y0 = bounds[2] + (bounds[3] - bounds[2] - dim) / 2;
 			//console.log(x0, y0, dim, bounds);
 			let polyInterp = [];
-			let amountPerPerturb = dim / k / 30;
 			for (let i = 0; i < r.Pstart.length; i++) {
 				let p0 = r.Pstart[i];
-				let [p1x, p1y] = r.Ptarget[i];
-				p1x = p1x * dim / 2 / k + x0 + amountPerPerturb * r.perturbance[i][0];
-				p1y = p1y * dim / 2 / k + y0 + amountPerPerturb * r.perturbance[i][1];
+				let [p1x, p1y] = rankToGrid(r.Ptarget[i], i);
 				//console.log('pre:', r.Ptarget[i]);
 				//console.log('actual:', p1x, p1y);
 				let pInterp = [r.t * (p1x - p0[0]) + p0[0], r.t * (p1y - p0[1]) + p0[1]];
@@ -797,9 +780,7 @@ function renderRectification(ctx) {
 			let rectifiedPts = [];
 			for (let i = 0; i < r.Otarget.length; i++) {
 				let p0 = selectedPoints[i];
-				let [p1x, p1y] = r.Otarget[i];
-				p1x = p1x * dim / 2 / k + x0;
-				p1y = p1y * dim / 2 / k + y0;
+				let [p1x, p1y] = rankToGrid(r.Otarget[i]);
 				//console.log('pre:', r.Ptarget[i]);
 				//console.log('actual:', p1x, p1y);
 				let pInterp = [r.t * (p1x - p0[0]) + p0[0], r.t * (p1y - p0[1]) + p0[1]];
@@ -810,23 +791,28 @@ function renderRectification(ctx) {
 			drawPoints(ctx, rectifiedPts);
 		} else if (r.stage == 'reduce') {
 			ctx.strokeStyle = 'blue';
-			let k = selectedPoints.length;
-			let dim = Math.min(0.75*(bounds[3] - bounds[2]), 0.75*(bounds[1] - bounds[0]));
-			let x0 = bounds[0] + (bounds[1] - bounds[0] - dim) / 2;
-			let y0 = bounds[2] + (bounds[3] - bounds[2] - dim) / 2;
-			let amountPerPerturb = dim / k / 30;
+			
 			let rectified = [];
-			for (let i = 0; i < r.Pstart.length; i++) {
-				let [p1x, p1y] = r.Ptarget[i];
-				rectified.push([p1x * dim / 2 / k + x0 + amountPerPerturb * r.perturbance[i][0], p1y * dim / 2 / k + y0 + amountPerPerturb * r.perturbance[i][1]]);
+			for (let i = 0; i < r.Ptarget.length; i++) {
+				rectified.push(rankToGrid(r.Ptarget[i], i));
 			}
 			drawPolygon(ctx, rectified);
+
+			if (!r.done && r.reduceEdge != -1 && r.Ptarget[r.reduceEdge]) {
+				let p0 = rankToGrid(r.Ptarget[r.reduceEdge], r.reduceEdge);
+				let p1 = rankToGrid(r.Ptarget[(r.reduceEdge + 1) % r.Ptarget.length], (r.reduceEdge + 1) % r.Ptarget.length);
+				//console.log('drawing reducible edge', p0, p1);
+				ctx.strokeStyle = 'red';
+				ctx.beginPath();
+				ctx.moveTo(...p0);
+				ctx.lineTo(...p1);
+				ctx.stroke();
+			}
 
 			let rectifiedPts = [];
 			for (let i = 0; i < r.Otarget.length; i++) {
 				//console.log(r.Otarget, i, r.Otarget[i]);
-				let [p1x, p1y] = r.Otarget[i];
-				rectifiedPts.push([p1x * dim / 2 / k + x0, p1y * dim / 2 / k + y0]);
+				rectifiedPts.push(rankToGrid(r.Otarget[i]));
 			}
 
 			ctx.fillStyle = 'black';
@@ -835,6 +821,23 @@ function renderRectification(ctx) {
 
 		renderCursor(ctx);
 	}
+}
+
+function rankToGrid(p, i=-1) {
+	let [p1x, p1y] = p;
+	let r = rectAnimParams;
+	let k = selectedPoints.length;
+	let dim = Math.min(0.75*(bounds[3] - bounds[2]), 0.75*(bounds[1] - bounds[0]));
+	let x0 = bounds[0] + (bounds[1] - bounds[0] - dim) / 2;
+	let y0 = bounds[2] + (bounds[3] - bounds[2] - dim) / 2;
+	let amountPerPerturb = dim / k / 30;
+	let petx = 0;
+	let pety = 0;
+	if (i != -1) {
+		petx = amountPerPerturb * r.perturbance[i][0];
+		pety = amountPerPerturb * r.perturbance[i][1];
+	}
+	return [p1x * dim / 2 / k + x0 + petx, p1y * dim / 2 / k + y0 + pety];
 }
 
 function drawDefaults(ctx) {
@@ -1023,6 +1026,168 @@ function perturb(poly) {
 			d[x][i][0] += 0.001 * (i + (n - 1) / 2);
 		}
 	}
+}
+
+function calculatePerturbances(r) {
+	let vertMap = {};
+	let horizMap = {};
+	n = r.Ptarget.length;
+
+	for (let i = 0; i < n; i++) {
+		let p1 = r.Ptarget[i];
+		let p2 = r.Ptarget[(i + 1) % n];
+		let vert = p1[0] == p2[0];
+		let horiz = p1[1] == p2[1];
+		if (!(vert && horiz)) {
+			r.startingVertical = (i % 2) ^ vert;
+			break;
+		}
+	}
+
+	for (let i = 0; i < n; i++) {
+		let p1 = r.Ptarget[i];
+		let p2 = r.Ptarget[(i + 1) % n];
+		let vert = (i % 2) ^ r.startingVertical;
+		// if (vert && horiz) {
+		// 	console.log('zero length edge', p1, p2);
+		// } else 
+		if (vert) {
+			if (!vertMap[p1[0]]) vertMap[p1[0]] = [];
+			vertMap[p1[0]].push(i);
+		} else {
+			if (!horizMap[p1[1]]) horizMap[p1[1]] = [];
+			horizMap[p1[1]].push(i);
+		}
+	}
+
+	r.perturbance = r.Ptarget.map(x => [0, 0]);
+	for (let inds of Object.values(vertMap)) {
+		let n = inds.length;
+		for (let off = 0; off < n; off++) {
+			let i = inds[off];
+			//console.log('moving vertical edge horizontally', i)
+			r.perturbance[i][0] += off - (n - 1) / 2;
+			r.perturbance[(i + 1) % r.perturbance.length][0] += off - (n - 1) / 2;
+		}
+	}
+
+	//console.log(vertMap, horizMap);
+
+	for (let inds of Object.values(horizMap)) {
+		let n = inds.length;
+		for (let off = 0; off < n; off++) {
+			let i = inds[off];
+
+			//console.log('moving horizontal edge vertically', i)
+			r.perturbance[i][1] += off - (n - 1) / 2;
+			r.perturbance[(i + 1) % r.perturbance.length][1] += off - (n - 1) / 2;
+		}
+	}
+
+	//console.log('perturbance:', r.perturbance);
+}
+
+function findReducibleEdge(poly, obs, v0) {
+	let n = poly.length;
+	for (let i = 0; i < n; i++) {
+		let q = poly[i];
+		let r = poly[(i + 1) % n];
+		let qrvert = (i % 2) ^ v0;
+		if (comparePoints(q, r)) {
+			return [i, 'elide'];
+		}
+
+		let p = poly[(i - 1 + n) % n];
+		let s = poly[(i + 2) % n];
+
+		let orientpq = q[1 - qrvert] - p[1 - qrvert];
+		let orientrs = s[1 - qrvert] - r[1 - qrvert];
+
+		if (orientrs == orientrs && orientrs != 0) {
+			// we have a bracket bois
+			if (qrvert) {
+				// [ or ]
+				if (orientrs > 0) {
+					// right facing bracket [
+					let ok = true;
+					for (let [ox, oy] of obs) {
+						if (Math.min(q[1], r[1]) < oy && oy < Math.max(q[1], r[1])) {
+							if (ox > q[0]) {
+								// inside to the right
+								if (ox < q[0] + 2) {
+									// we cannot shift to the right
+									ok = false;
+									break;
+								}
+							}
+						}
+					}
+					if (ok) {
+						return [i, 'rightslide'];
+					}
+				} else {
+					// left facing bracket ]
+					let ok = true;
+					for (let [ox, oy] of obs) {
+						if (Math.min(q[1], r[1]) < oy && oy < Math.max(q[1], r[1])) {
+							if (ox < q[0]) {
+								// inside to the right
+								if (ox > q[0] - 2) {
+									// we cannot shift to the left
+									ok = false;
+									break;
+								}
+							}
+						}
+					}
+					if (ok) {
+						return [i, 'leftslide'];
+					}
+				}
+			} else {
+				// n or u
+				if (orientrs > 0) {
+					// up facing bracket u
+					let ok = true;
+					for (let [ox, oy] of obs) {
+						if (Math.min(q[0], r[0]) < ox && ox < Math.max(q[0], r[0])) {
+							if (oy > q[1]) {
+								// inside and above
+								if (oy < q[1] + 2) {
+									// we cannot shift up
+									ok = false;
+									break;
+								}
+							}
+						}
+					}
+					if (ok) {
+						return [i, 'upslide'];
+					}
+				} else {
+					// down facing bracket n
+					let ok = true;
+					for (let [ox, oy] of obs) {
+						if (Math.min(q[0], r[0]) < ox && ox < Math.max(q[0], r[0])) {
+							if (oy < q[1]) {
+								// inside and below
+								if (oy > q[1] - 2) {
+									// we cannot shift down
+									ok = false;
+									break;
+								}
+							}
+						}
+					}
+					if (ok) {
+						return [i, 'downslide'];
+					}
+				}
+			}
+		}
+	}
+
+	return [-1, 'done'];
 }
 
 function segments(poly) {
