@@ -20,3 +20,4 @@
 - add clear button
 - scroll wheel to change animation speed
 - rectification done without bracket sliding (some bugs remain)
+- lines no longer overlap after rectification

@@ -464,6 +464,62 @@ function updateRectification(dt=0) {
 					r.Ptarget.push([hrankq, vrankqr]);
 				}
 
+				let vertMap = {};
+				let horizMap = {};
+				n = r.Ptarget.length;
+
+				for (let i = 0; i < n; i++) {
+					let p1 = r.Ptarget[i];
+					let p2 = r.Ptarget[(i + 1) % n];
+					let vert = p1[0] == p2[0];
+					let horiz = p1[1] == p2[1];
+					if (!(vert && horiz)) {
+						r.startingVertical = (i % 2) ^ vert;
+						break;
+					}
+				}
+
+				for (let i = 0; i < n; i++) {
+					let p1 = r.Ptarget[i];
+					let p2 = r.Ptarget[(i + 1) % n];
+					let vert = (i % 2) ^ r.startingVertical;
+					// if (vert && horiz) {
+					// 	console.log('zero length edge', p1, p2);
+					// } else 
+					if (vert) {
+						if (!vertMap[p1[0]]) vertMap[p1[0]] = [];
+						vertMap[p1[0]].push(i);
+					} else {
+						if (!horizMap[p1[1]]) horizMap[p1[1]] = [];
+						horizMap[p1[1]].push(i);
+					}
+				}
+				
+				r.perturbance = r.Ptarget.map(x => [0, 0]);
+				for (let inds of Object.values(vertMap)) {
+					let n = inds.length;
+					for (let off = 0; off < n; off++) {
+						let i = inds[off];
+						//console.log('moving vertical edge horizontally', i)
+						r.perturbance[i][0] += off - (n - 1) / 2;
+						r.perturbance[(i + 1) % r.perturbance.length][0] += off - (n - 1) / 2;
+					}
+				}
+
+				console.log(vertMap, horizMap);
+
+				for (let inds of Object.values(horizMap)) {
+					let n = inds.length;
+					for (let off = 0; off < n; off++) {
+						let i = inds[off];
+
+						//console.log('moving horizontal edge vertically', i)
+						r.perturbance[i][1] += off - (n - 1) / 2;
+						r.perturbance[(i + 1) % r.perturbance.length][1] += off - (n - 1) / 2;
+					}
+				}
+				console.log('perturbance:', r.perturbance);
+
 				r.Otarget = [];
 				for (let p of selectedPoints) {
 					let hranko = r.hrank[r.V.findIndex(pt => comparePoints(p, pt))];
@@ -724,11 +780,12 @@ function renderRectification(ctx) {
 			let y0 = bounds[2] + (bounds[3] - bounds[2] - dim) / 2;
 			//console.log(x0, y0, dim, bounds);
 			let polyInterp = [];
+			let amountPerPerturb = dim / k / 30;
 			for (let i = 0; i < r.Pstart.length; i++) {
 				let p0 = r.Pstart[i];
 				let [p1x, p1y] = r.Ptarget[i];
-				p1x = p1x * dim / 2 / k + x0;
-				p1y = p1y * dim / 2 / k + y0;
+				p1x = p1x * dim / 2 / k + x0 + amountPerPerturb * r.perturbance[i][0];
+				p1y = p1y * dim / 2 / k + y0 + amountPerPerturb * r.perturbance[i][1];
 				//console.log('pre:', r.Ptarget[i]);
 				//console.log('actual:', p1x, p1y);
 				let pInterp = [r.t * (p1x - p0[0]) + p0[0], r.t * (p1y - p0[1]) + p0[1]];
@@ -757,10 +814,11 @@ function renderRectification(ctx) {
 			let dim = Math.min(0.75*(bounds[3] - bounds[2]), 0.75*(bounds[1] - bounds[0]));
 			let x0 = bounds[0] + (bounds[1] - bounds[0] - dim) / 2;
 			let y0 = bounds[2] + (bounds[3] - bounds[2] - dim) / 2;
+			let amountPerPerturb = dim / k / 30;
 			let rectified = [];
 			for (let i = 0; i < r.Pstart.length; i++) {
 				let [p1x, p1y] = r.Ptarget[i];
-				rectified.push([p1x * dim / 2 / k + x0, p1y * dim / 2 / k + y0]);
+				rectified.push([p1x * dim / 2 / k + x0 + amountPerPerturb * r.perturbance[i][0], p1y * dim / 2 / k + y0 + amountPerPerturb * r.perturbance[i][1]]);
 			}
 			drawPolygon(ctx, rectified);
 
@@ -962,7 +1020,7 @@ function perturb(poly) {
 		let pts = d[x];
 		let n = d[x].length;
 		for (let i = 0; i < n; i++) {
-			d[x][i][0] += 0.001 * i;
+			d[x][i][0] += 0.001 * (i + (n - 1) / 2);
 		}
 	}
 }
