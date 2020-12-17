@@ -13,6 +13,7 @@ var newPoly;
 var bounds;
 var windingAnimParams;
 var triangAnimParams;
+var rectAnimParams;
 
 var centerCoord = [0, 0];
 //var cellSize = 10;
@@ -37,9 +38,102 @@ function resetAnimParams() {
 		done: false,
 		animStepTime: 400
 	};
+	rectAnimParams = {
+		P: [],
+		S: [],
+		V: [],
+		iV: 0,
+		t: 0,
+		fences: [],
+		stage: 'selectpoly',
+		polyalpha: 1,
+		gridalpha: 1,
+		animStepTime: 400
+	};
 }
 
 resetAnimParams();
+
+class SegmentGraph {
+	constructor() {
+		this.segmap = {};
+		this.backedges = {};
+	}
+
+	add(seg, x) {
+		if (this.segmap[JSON.stringify(seg)]) {
+			this.segmap[JSON.stringify(seg)].push(x);
+		} else {
+			this.segmap[JSON.stringify(seg)] = [x];
+		}
+		if (this.backedges[JSON.stringify(x)]) {
+			this.backedges[JSON.stringify(x)].push(seg);
+		} else {
+			this.backedges[JSON.stringify(x)] = [seg];
+		}
+	}
+
+	get(seg) {
+		let res = this.segmap[JSON.stringify(seg)];
+		if (res) {
+			return res;
+		} else {
+			return [];
+		}
+	}
+
+	remove(n, m) {
+		let compare;
+		if (isNaN(n)) compare = compareSegments;
+		else compare = (a, b) => a == b;
+		let entry = this.segmap[JSON.stringify(n)];
+		if (entry) {
+			this.segmap[JSON.stringify(n)] = entry.filter(s => !compare(s, m));
+		}
+
+		entry = this.backedges[JSON.stringify(m)];
+		if (entry) {
+			let i = entry.findIndex(s => compare(s, n));
+			if (i != -1) {
+				this.backedges[JSON.stringify(m)] = entry.filter(s => !compare(s, n));
+			}
+		}
+	}
+
+	keys() {
+		return Object.keys(this.segmap).map(x => JSON.parse(x));
+	}
+
+	topsort() {
+		let L = [];
+		let S = this.keys();
+		// console.log(this.backedges);
+		for (let i = S.length - 1; i > 0; i--) {
+			// console.log(S[i], this.backedges[S[i]]);
+			if (this.backedges[JSON.stringify(S[i])] || this.backedges[JSON.stringify([S[i][1], S[i][0]])]) {
+				S.splice(i, 1);
+			}
+		}
+
+		while (S.length > 0) {
+			let n = S.pop();
+			L.push(n);
+			// console.log('added', JSON.stringify(n), 'to topological ordering');
+			for (let m of this.get(n)) {
+				this.remove(n, m);
+				let be = this.backedges[JSON.stringify(m)];
+				// console.log('testing', JSON.stringify(m), be);
+				if (!be || be.length == 0) {
+					S.push(m);
+				}
+			}
+		}
+
+		// console.log(this.segmap, this.backedges);
+
+		return L;
+	}
+}
 
 function windingNumber(P, o) {
 	let wind = 0;
@@ -221,6 +315,175 @@ function updateTriangulate(dt=0) {
 	}
 }
 
+function updateRectification(dt=0) {
+	let r = rectAnimParams;
+	if (r.stage == 'selectpoly') {
+		if (selectedPolygonIndex == -1) {
+			if (polygons.length == 1) {
+				selectedPolygonIndex = 0;
+				r.P = polygons[selectedPolygonIndex].slice();
+				r.stage = 'selectpoints';
+				displayInfo('Select obstacle points (Enter to confirm)');
+
+			} else if (polygons.length == 0) {
+				displayInfo('Draw a polygon first');
+			} else {
+				displayInfo('Select a polygon');
+			}
+		} else {
+			r.P = polygons[selectedPolygonIndex].slice();
+			perturb(r.P);
+			r.stage = 'selectpoints';
+			displayInfo('Select obstacle points (Enter to confirm)');
+		}
+	}
+
+	if (r.stage == 'selectpoints') {
+		
+	} else if (r.stage == 'init') {
+		while (true) {
+			let intersection = selfIntersection(r.P, true);
+			if (!intersection) {
+				break;
+			}
+
+			// console.log(intersection);
+			let [pt, edge] = intersection;
+			let [e1, e2] = edge.sort((a, b) => b - a);
+			r.P.splice(e1 + 1, 0, pt.slice());
+			r.P.splice(e2 + 1, 0, pt.slice());
+		}
+
+		r.S = segments(r.P).concat(selectedPoints.map(p => [p, p]));
+		r.G = new SegmentGraph();
+		r.V = new Set();
+		for (let s of r.S) {
+			r.V.add(String(s[0]));
+			r.V.add(String(s[1]));
+		}
+		r.V = [...r.V.keys()].map(x => x.split(',').map(y => parseFloat(y))).sort((a, b) => a[0] - b[0]); // sort vertices by x coordinate
+
+		r.stage = 'postinit';
+	} else if (r.stage == 'postinit') {
+		r.polyalpha -= dt / 400;
+		if (r.polyalpha < 0) {
+			r.polyalpha = 0;
+			r.stage = 'trap';
+		}
+	} else if (r.stage == 'trap') {
+		if (r.t == 0) {
+			let p = r.V[r.iV];
+			let [x, y] = p;
+			let minAbove;
+			let minAboveY = Infinity;
+			let minBelow;
+			let minBelowY = -Infinity;
+			for (let s of r.S) {
+				let [p1, p2] = s;
+				let point = intersectsVertical(p1, p2, x);
+				if (point) {
+					let [px, py] = point;
+					if (py > y && py < minAboveY) {
+						minAboveY = py;
+						minAbove = s;
+					}
+					if (py < y && py > minBelowY) {
+						minBelowY = py;
+						minBelow = s;
+					}
+				}
+			}
+
+			//console.log(p, minBelow, minAbove);
+
+			if (!isFinite(minBelowY)) minBelowY = y;
+			if (!isFinite(minAboveY)) minAboveY = y;
+			if (minBelowY != minAboveY) {
+				r.fences.push([[x, minBelowY], [x, minAboveY]]);
+			}
+			
+			for (let s of r.S) {
+				if (comparePoints(s[0], p) || comparePoints(s[1], p)) {
+					if (minAbove && minAbove != y) r.G.add(minAbove, s);
+					if (minBelow && minBelow != y) r.G.add(s, minBelow);
+				}
+			}
+		}
+		if (r.t < r.animStepTime) {
+			r.t += dt;
+		} else {
+			r.t = 0;
+			r.iV++;
+			if (r.iV >= r.V.length) {
+				r.ordering = r.G.topsort();
+
+				let obsbelow = 0;
+				r.vrank = [];
+				for (let i = r.ordering.length - 1; i >= 0; i--) {
+					let seg = r.ordering[i];
+					if (comparePoints(seg[0], seg[1])) {
+						r.vrank.unshift(2 * obsbelow + 1);
+						obsbelow++;
+					} else {
+						r.vrank.unshift(2 * obsbelow);
+					}
+				}
+
+				for (let entry of r.V) {
+					if (selectedPoints.find(x => comparePoints(entry, x))) {
+						entry.push(1);
+					}
+				}
+				let obsleft = 0;
+				r.hrank = [];
+				for (let v of r.V) {
+					if (v[2]) {
+						r.hrank.push(2 * obsleft + 1);
+						obsleft++;
+					} else {
+						r.hrank.push(2 * obsleft);
+					}
+				}
+				
+				r.t = 0;
+				r.Pstart = [];
+				r.Ptarget = [];
+				let P = r.P;
+				let n = P.length;
+				for (let i = 0; i < n; i++) {
+					let pp = P[i];
+					let pq = P[(i+1)%n];
+					let pr = P[(i+2)%n];
+					let vrankpq = r.vrank[r.ordering.findIndex(seg => compareSegments(seg, [pp, pq]))];
+					let hrankq = r.hrank[r.V.findIndex(pt => comparePoints(pt, pq))];
+					let vrankqr = r.vrank[r.ordering.findIndex(seg => compareSegments(seg, [pq, pr]))];
+					// console.log(vrankpq, hrankq, vrankqr);
+					r.Pstart.push(pq.slice());
+					r.Pstart.push(pq.slice());
+					r.Ptarget.push([hrankq, vrankpq]);
+					r.Ptarget.push([hrankq, vrankqr]);
+				}
+
+				r.Otarget = [];
+				for (let p of selectedPoints) {
+					let hranko = r.hrank[r.V.findIndex(pt => comparePoints(p, pt))];
+					let vranko = r.vrank[r.ordering.findIndex(seg => compareSegments(seg, [p, p]))];
+					r.Otarget.push([hranko, vranko]);
+				}
+
+				r.stage = 'rectify';
+			}
+		}
+	} else if (r.stage == 'rectify') {
+		r.t += 0.4 / r.animStepTime;
+		r.gridalpha = Math.max(0, r.gridalpha - 0.8 / r.animStepTime);
+
+		if (r.t > 1) {
+			r.stage = 'reduce';
+		}
+	}
+}
+
 function toolButtonSelected(toolBtn, toolName) {
 	let prevTool = currentTool;
 	currentTool = toolName;
@@ -244,6 +507,10 @@ function toolButtonSelected(toolBtn, toolName) {
 
 	if (toolName == 'triangulate') {
 		updateTriangulate();
+	}
+
+	if (toolName == 'rectification') {
+		updateRectification();
 	}
 }
 
@@ -292,14 +559,23 @@ function loop(curTime) {
 }
 
 function update(dt) {
+	let minX = (-windowWidth / 2) / pixelsPerCoord + centerCoord[0];
+	let maxX = (windowWidth / 2) / pixelsPerCoord + centerCoord[0];
+	let minY = (-windowHeight / 2) / pixelsPerCoord + centerCoord[1];
+	let maxY = (windowHeight / 2) / pixelsPerCoord + centerCoord[1];
+	bounds = [minX, maxX, minY, maxY];
+
 	if (currentTool == 'winding') {
 		updateWinding(dt);
 	} else if (currentTool == 'triangulate') {
 		updateTriangulate(dt);
+	} else if (currentTool == 'rectification') {
+		updateRectification(dt);
 	}
 }
 
 function renderWinding(ctx) {
+	drawDefaults(ctx);
 	let w = windingAnimParams;
 	ctx.fillStyle = 'rgba(0, 0, 255, 1)';
 	ctx.strokeStyle = 'rgba(0, 0, 255, 0.5)';
@@ -359,9 +635,12 @@ function renderWinding(ctx) {
 			ctx.restore();
 		}
 	}
+
+	renderCursor(ctx);
 }
 
 function renderTriangulate(ctx) {
+	drawDefaults(ctx);
 	let t = triangAnimParams;
 	ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
 	ctx.beginPath();
@@ -388,6 +667,132 @@ function renderTriangulate(ctx) {
 			ctx.stroke();
 		}
 	}
+
+	renderCursor(ctx);
+}
+
+function renderRectification(ctx) {
+	let r = rectAnimParams;
+	//$('#debug').html(r.stage);
+	if (r.stage == 'selectpoly' || r.stage == 'selectpoints') {
+		drawDefaults(ctx);
+		ctx.fillStyle = 'rgba(0, 0, 255, 1)';
+		drawPoints(ctx, selectedPoints);
+		renderCursor(ctx);
+	} else {
+		ctx.globalAlpha = r.gridalpha;
+		drawGrid(ctx);
+		ctx.globalAlpha = r.polyalpha;
+		drawPolys(ctx);
+		ctx.globalAlpha = 1;
+		ctx.lineWidth = 2 / pixelsPerCoord;
+
+		if (r.stage == 'postinit') {
+			ctx.globalAlpha = 1 - r.polyalpha;
+			ctx.strokeStyle = 'blue';
+			drawSegments(ctx, r.S);
+			ctx.globalAlpha = 1;
+			ctx.fillStyle = 'black';
+			drawSegmentPoints(ctx, r.S);
+		} else if (r.stage == 'trap') {
+			ctx.strokeStyle = 'blue';
+			drawSegments(ctx, r.S);
+
+			ctx.strokeStyle = 'rgba(255, 0, 0, 0.7)';
+			ctx.beginPath();
+			for (let [p1, p2] of r.fences) {
+				ctx.moveTo(...p1);
+				ctx.lineTo(...p2);
+			}
+			ctx.stroke();
+
+			if (r.V[r.iV]) {
+				ctx.strokeStyle = 'rgba(255, 0, 0, 1)';
+				ctx.beginPath();
+				ctx.moveTo(r.V[r.iV][0], bounds[2]);
+				ctx.lineTo(r.V[r.iV][0], bounds[3]);
+				ctx.stroke();
+			}
+
+			ctx.fillStyle = 'black';
+			drawSegmentPoints(ctx, r.S);
+		} else if (r.stage == 'rectify') {
+			ctx.strokeStyle = 'blue';
+			let k = selectedPoints.length;
+			let dim = Math.min(0.75*(bounds[3] - bounds[2]), 0.75*(bounds[1] - bounds[0]));
+			let x0 = bounds[0] + (bounds[1] - bounds[0] - dim) / 2;
+			let y0 = bounds[2] + (bounds[3] - bounds[2] - dim) / 2;
+			//console.log(x0, y0, dim, bounds);
+			let polyInterp = [];
+			for (let i = 0; i < r.Pstart.length; i++) {
+				let p0 = r.Pstart[i];
+				let [p1x, p1y] = r.Ptarget[i];
+				p1x = p1x * dim / 2 / k + x0;
+				p1y = p1y * dim / 2 / k + y0;
+				//console.log('pre:', r.Ptarget[i]);
+				//console.log('actual:', p1x, p1y);
+				let pInterp = [r.t * (p1x - p0[0]) + p0[0], r.t * (p1y - p0[1]) + p0[1]];
+				polyInterp.push(pInterp);
+			}
+
+			drawPolygon(ctx, polyInterp);
+
+			let rectifiedPts = [];
+			for (let i = 0; i < r.Otarget.length; i++) {
+				let p0 = selectedPoints[i];
+				let [p1x, p1y] = r.Otarget[i];
+				p1x = p1x * dim / 2 / k + x0;
+				p1y = p1y * dim / 2 / k + y0;
+				//console.log('pre:', r.Ptarget[i]);
+				//console.log('actual:', p1x, p1y);
+				let pInterp = [r.t * (p1x - p0[0]) + p0[0], r.t * (p1y - p0[1]) + p0[1]];
+				rectifiedPts.push(pInterp);
+			}
+
+			ctx.fillStyle = 'black';
+			drawPoints(ctx, rectifiedPts);
+		} else if (r.stage == 'reduce') {
+			ctx.strokeStyle = 'blue';
+			let k = selectedPoints.length;
+			let dim = Math.min(0.75*(bounds[3] - bounds[2]), 0.75*(bounds[1] - bounds[0]));
+			let x0 = bounds[0] + (bounds[1] - bounds[0] - dim) / 2;
+			let y0 = bounds[2] + (bounds[3] - bounds[2] - dim) / 2;
+			let rectified = [];
+			for (let i = 0; i < r.Pstart.length; i++) {
+				let [p1x, p1y] = r.Ptarget[i];
+				rectified.push([p1x * dim / 2 / k + x0, p1y * dim / 2 / k + y0]);
+			}
+			drawPolygon(ctx, rectified);
+
+			let rectifiedPts = [];
+			for (let i = 0; i < r.Otarget.length; i++) {
+				//console.log(r.Otarget, i, r.Otarget[i]);
+				let [p1x, p1y] = r.Otarget[i];
+				rectifiedPts.push([p1x * dim / 2 / k + x0, p1y * dim / 2 / k + y0]);
+			}
+
+			ctx.fillStyle = 'black';
+			drawPoints(ctx, rectifiedPts);
+		}
+
+		renderCursor(ctx);
+	}
+}
+
+function drawDefaults(ctx) {
+	drawGrid(ctx);
+	drawPolys(ctx);
+}
+
+function renderCursor(ctx, style='rgba(255, 0, 0, 0.5)') {
+	ctx.fillStyle = style;
+	ctx.beginPath();
+	ctx.arc(Math.round(mouseGridX), Math.round(mouseGridY), 4 / pixelsPerCoord, 0, 2 * Math.PI);
+	ctx.fill();
+}
+
+function updateMouseCoords() {
+	$('#coords').html(`(${Math.round(mouseGridX)}, ${Math.round(mouseGridY)})`);
 }
 
 function render() {
@@ -398,31 +803,24 @@ function render() {
 	ctx.translate(windowWidth / 2, windowHeight / 2);
 	ctx.scale(pixelsPerCoord, -pixelsPerCoord);
 	ctx.translate(-centerCoord[0], -centerCoord[1]);
-	drawGrid(ctx);
-	drawPolys(ctx);
 
-	if (currentTool == 'winding') {
+	if (currentTool == 'select' || currentTool == 'poly') {
+		drawDefaults(ctx);
+		renderCursor(ctx);
+	} else if (currentTool == 'winding') {
 		renderWinding(ctx);
 	} else if (currentTool == 'triangulate') {
 		renderTriangulate(ctx);
+	} else if (currentTool == 'rectification') {
+		renderRectification(ctx);
 	}
 
-	ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
-	ctx.beginPath();
-	ctx.arc(Math.round(mouseGridX), Math.round(mouseGridY), 4 / pixelsPerCoord, 0, 2 * Math.PI);
-	ctx.fill();
-
+	updateMouseCoords();
 	ctx.restore();
-
-	$('#coords').html(`(${Math.round(mouseGridX)}, ${Math.round(mouseGridY)})`);
 }
 
 function drawGrid(ctx) {
-	let minX = (-windowWidth / 2) / pixelsPerCoord + centerCoord[0];
-	let maxX = (windowWidth / 2) / pixelsPerCoord + centerCoord[0];
-	let minY = (-windowHeight / 2) / pixelsPerCoord + centerCoord[1];
-	let maxY = (windowHeight / 2) / pixelsPerCoord + centerCoord[1];
-	bounds = [minX, maxX, minY, maxY];
+	let [minX, maxX, minY, maxY] = bounds;
 	let onepx = 1 / pixelsPerCoord;
 
 	ctx.strokeStyle = '#DDD';
@@ -451,7 +849,7 @@ function drawPolys(ctx) {
 		ctx.moveTo(...newPoly[newPoly.length - 1]);
 		ctx.lineTo(Math.round(mouseGridX), Math.round(mouseGridY));
 		ctx.stroke();
-		drawPolygonPoints(ctx, newPoly);
+		drawPoints(ctx, newPoly);
 	}
 
 	ctx.lineWidth = 2 / pixelsPerCoord;
@@ -464,7 +862,7 @@ function drawPolys(ctx) {
 			drawPolygonDirection(ctx, poly);
 		}
 		ctx.strokeStyle = '#000';
-		drawPolygonPoints(ctx, poly);
+		drawPoints(ctx, poly);
 	}
 }
 
@@ -494,6 +892,26 @@ function drawPolygon(ctx, poly, complete=true) {
 	ctx.stroke();
 }
 
+function drawSegments(ctx, segs) {
+	ctx.beginPath();
+	for (let [p1, p2] of segs) {
+		ctx.moveTo(...p1);
+		ctx.lineTo(...p2);
+	}
+
+	ctx.stroke();
+}
+
+function drawSegmentPoints(ctx, segs) {
+	for (let ps of segs) {
+		for (let [x, y] of ps) {
+			ctx.beginPath();
+			ctx.arc(x, y, 3 / pixelsPerCoord, 0, 2 * Math.PI);
+			ctx.fill();
+		}
+	}
+}
+
 function drawPolygonDirection(ctx, poly) {
 	let n = poly.length;
 	let d = ctx.lineWidth;
@@ -514,8 +932,8 @@ function drawPolygonDirection(ctx, poly) {
 	}
 }
 
-function drawPolygonPoints(ctx, poly) {
-	for (let [x, y] of poly) {
+function drawPoints(ctx, points) {
+	for (let [x, y] of points) {
 		ctx.beginPath();
 		ctx.arc(x, y, 3 / pixelsPerCoord, 0, 2 * Math.PI);
 		ctx.fill();
@@ -527,6 +945,39 @@ function resizeWindow() {
 	windowHeight = $(window).height();
 	$('canvas').attr('width', windowWidth);
 	$('canvas').attr('height', windowHeight);
+}
+
+function perturb(poly) {
+	let d = {};
+	for (let p of poly) {
+		let x = p[0];
+		if (d[x]) {
+			d[x].push(p);
+		} else {
+			d[x] = [p];
+		}
+	}
+
+	for (let x of Object.keys(d)) {
+		let pts = d[x];
+		let n = d[x].length;
+		for (let i = 0; i < n; i++) {
+			d[x][i][0] += 0.001 * i;
+		}
+	}
+}
+
+function segments(poly) {
+	let segs = [];
+	for (let i = 0; i < poly.length; i++) {
+		segs.push([poly[i], poly[(i + 1) % poly.length]]);
+	}
+
+	segs = segs.filter((s, index) => {
+		return segs.findIndex(x => compareSegments(s, x)) == index;
+	});
+
+	return segs;
 }
 
 function isCollinear(a, b, c, inbetween=false) {
@@ -553,6 +1004,25 @@ function comparePoints(a, b) {
 	return a[0] == b[0] && a[1] == b[1];
 }
 
+function compareSegments(a, b) {
+	return comparePoints(a[0], b[0]) && comparePoints(a[1], b[1]) || comparePoints(a[0], b[1]) && comparePoints(a[1], b[0]);
+}
+
+function slope(p1, p2) {
+	return (p1[1] - p2[1]) / (p1[0] - p2[0]);
+}
+
+function getIntersectionPoint(p1, p2, q1, q2) {
+	if (!intersect(p1, p2, q1, q2)) {
+		return null;
+	}
+	let m1 = slope(p1, p2);
+	let m2 = slope(q1, q2);
+	let x = ((q1[1] - p1[1]) - (m2 * q1[0] - m1 * p1[0])) / (m1 - m2);
+	let y = m1 * (x - p1[0]) + p1[1];
+	return [x, y];
+}
+
 function isSelfIntersecting(poly) {
 	let n = poly.length;
 	for (let i = 0; i < n; i++) {
@@ -564,6 +1034,70 @@ function isSelfIntersecting(poly) {
 	}
 
 	return false;
+}
+
+function selfIntersections(poly, edgeIndices=false) {
+	let pts = [];
+	let n = poly.length;
+
+	for (let i = 0; i < n; i++) {
+		for (let j = i + 1; j < n; j++) {
+			let pt = getIntersectionPoint(poly[i], poly[(i+1)%n], poly[j], poly[(j+1)%n]);
+			if (pt) {
+				if (poly.findIndex(p => p[0] == pt[0] && p[1] == pt[1]) == -1) {
+					if (edgeIndices) {
+						pts.push([pt, [i, j]]);
+					} else {
+						pts.push(pt);
+					}
+				}
+			}
+		}
+	}
+
+	return pts;
+}
+
+function selfIntersection(poly, edgeIndices=false) {
+	let pts = [];
+	let n = poly.length;
+
+	for (let i = 0; i < n; i++) {
+		for (let j = i + 2; j < n; j++) {
+			let a = poly[i];
+			let b = poly[(i+1)%n];
+			let c = poly[j];
+			let d = poly[(j+1)%n];
+			if (comparePoints(a, c) || comparePoints(a, d) || comparePoints(b, c) || comparePoints(b, d)) {
+				continue;
+			}
+			let pt = getIntersectionPoint(a, b, c, d);
+			if (pt) { // && isFinite(pt[0]) && isFinite(pt[1])) {
+				pt[0] = Math.round((pt[0] + Number.EPSILON) * 10000) / 10000;
+				pt[1] = Math.round((pt[1] + Number.EPSILON) * 10000) / 10000;
+				// console.log(pt, poly, poly.find(p => p[0] == pt[0] && p[1] == pt[1]));
+				if (!poly.find(p => p[0] == pt[0] && p[1] == pt[1])) {
+					if (edgeIndices) {
+						return [pt, [i, j]];
+					} else {
+						return pt;
+					}
+				}
+			}
+		}
+	}
+
+	return null;
+}
+
+function intersectsVertical(a, b, x) {
+	[a, b] = [a, b].sort((a, b) => a[0] - b[0]);
+	//console.log(a[0], b[0], x, a[0] < x, x < b[0]);
+	if (a[0] < x && x < b[0]) {
+		let y = a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]);
+		return [x, y];
+	}
+	return null;
 }
 
 function intersect(a, b, c, d) {
@@ -620,6 +1154,10 @@ $(document).ready(function() {
 
 	$('#triangulatebutton').click(function() {
 		toolButtonSelected(this, 'triangulate');
+	});
+
+	$('#rectificationbutton').click(function() {
+		toolButtonSelected(this, 'rectification');
 	});
 
 	window.addEventListener('resize', resizeWindow);
@@ -711,6 +1249,27 @@ $(document).ready(function() {
 					resetAnimParams();
 				}
 			}
+
+			if (currentTool == 'rectification') {
+				let r = rectAnimParams;
+				if (r.stage == 'selectpoly') {
+					selectPolygon(x, y, false);
+				} else if (r.stage == 'selectpoints') {
+					if (isOnPath(r.P, [x, y])) {
+						displayInfo('Point must not be on polygon boundary');
+						return;
+					}
+
+					displayInfo('Select obstacle points (Enter to confirm)');
+
+					let i = selectedPoints.findIndex(p => p[0] == x && p[1] == y);
+					if (i == -1) {
+						selectedPoints.push([x, y]);
+					} else {
+						selectedPoints.splice(i, 1);
+					}
+				}
+			}
 		}
 	});
 
@@ -739,6 +1298,12 @@ $(document).ready(function() {
 				selectedPolygonIndex = -1;
 			}
 		}
+		if (e.keyCode == 13) {
+			if (currentTool == 'rectification' && rectAnimParams.stage == 'selectpoints') {
+				rectAnimParams.stage = 'init';
+				displayInfo('');
+			}
+		}
 	});
 
 	window.addEventListener('wheel', e => {
@@ -746,6 +1311,8 @@ $(document).ready(function() {
 			windingAnimParams.animationSpeed /= (1 + Math.sign(e.deltaY) * 0.1);
 		} else if (currentTool == 'triangulate') {
 			triangAnimParams.animStepTime *= (1 + Math.sign(e.deltaY) * 0.1);
+		} else if (currentTool == 'rectification') {
+			rectAnimParams.animStepTime *= (1 + Math.sign(e.deltaY) * 0.1);
 		}
 	});
 

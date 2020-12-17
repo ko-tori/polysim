@@ -19,3 +19,4 @@
 - implement triangulation animation
 - add clear button
 - scroll wheel to change animation speed
+- rectification done without bracket sliding (some bugs remain)
