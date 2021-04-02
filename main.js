@@ -3,6 +3,7 @@ var mousePageX = 0;
 var mousePageY = 0;
 var mouseGridX = 0;
 var mouseGridY = 0;
+var altKeyDown = false;
 var currentTool = 'select';
 var windowWidth = 0;
 var windowHeight = 0;
@@ -1527,15 +1528,32 @@ $(document).ready(function() {
 				displayInfo('');
 			}
 		}
+		if (e.keyCode == 18) {
+			altKeyDown = true;
+		}
+	});
+
+	$(document).keyup(function(e) {
+		if (e.keyCode == 18) {
+			altKeyDown = false;
+		}
 	});
 
 	window.addEventListener('wheel', e => {
-		if (currentTool == 'winding') {
+		if (altKeyDown) {
+			if (currentTool == 'winding') {
 			windingAnimParams.animationSpeed /= (1 + Math.sign(e.deltaY) * 0.1);
-		} else if (currentTool == 'triangulate') {
-			triangAnimParams.animStepTime *= (1 + Math.sign(e.deltaY) * 0.1);
-		} else if (currentTool == 'rectification') {
-			rectAnimParams.animStepTime *= (1 + Math.sign(e.deltaY) * 0.1);
+			} else if (currentTool == 'triangulate') {
+				triangAnimParams.animStepTime *= (1 + Math.sign(e.deltaY) * 0.1);
+			} else if (currentTool == 'rectification') {
+				rectAnimParams.animStepTime *= (1 + Math.sign(e.deltaY) * 0.1);
+			}
+		} else {
+			let d = Math.exp((e.deltaY > 0 ? -1 : 1) * 0.1);
+			pixelsPerCoord *= d;
+			let newloc = gridConvert(mousePageX, mousePageY);
+			centerCoord[0] += (mouseGridX - newloc[0]);
+			centerCoord[1] += (mouseGridY - newloc[1]);
 		}
 	});
 
