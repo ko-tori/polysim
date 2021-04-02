@@ -3,7 +3,7 @@ var mousePageX = 0;
 var mousePageY = 0;
 var mouseGridX = 0;
 var mouseGridY = 0;
-var altKeyDown = false;
+var shiftKeyDown = false;
 var currentTool = 'select';
 var windowWidth = 0;
 var windowHeight = 0;
@@ -1528,19 +1528,21 @@ $(document).ready(function() {
 				displayInfo('');
 			}
 		}
-		if (e.keyCode == 18) {
-			altKeyDown = true;
+		if (e.shiftKey || e.keyCode == 18) {
+			shiftKeyDown = true;
+			console.log('down');
 		}
 	});
 
 	$(document).keyup(function(e) {
-		if (e.keyCode == 18) {
-			altKeyDown = false;
+		if (!e.shiftKey) {
+			shiftKeyDown = false;
+			console.log('up');
 		}
 	});
 
 	window.addEventListener('wheel', e => {
-		if (altKeyDown) {
+		if (shiftKeyDown) {
 			if (currentTool == 'winding') {
 			windingAnimParams.animationSpeed /= (1 + Math.sign(e.deltaY) * 0.1);
 			} else if (currentTool == 'triangulate') {
@@ -1549,11 +1551,15 @@ $(document).ready(function() {
 				rectAnimParams.animStepTime *= (1 + Math.sign(e.deltaY) * 0.1);
 			}
 		} else {
-			let d = Math.exp((e.deltaY > 0 ? -1 : 1) * 0.1);
-			pixelsPerCoord *= d;
-			let newloc = gridConvert(mousePageX, mousePageY);
-			centerCoord[0] += (mouseGridX - newloc[0]);
-			centerCoord[1] += (mouseGridY - newloc[1]);
+			if (currentTool == 'rectification' && (rectAnimParams.stage == 'rectify' || rectAnimParams.stage == 'reduce')) {
+				
+			} else {
+				let d = Math.exp((e.deltaY > 0 ? -1 : 1) * 0.1);
+				pixelsPerCoord *= d;
+				let newloc = gridConvert(mousePageX, mousePageY);
+				centerCoord[0] += (mouseGridX - newloc[0]);
+				centerCoord[1] += (mouseGridY - newloc[1]);
+			}
 		}
 	});
 

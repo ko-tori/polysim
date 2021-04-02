@@ -4,5 +4,5 @@
 
  - Select tool: Delete key to delete polygon
  - Polygon tool: Right click to remove latest edge
- - Scroll wheel to zoom
- - Alt+scroll to change animation speed
+ - Scroll to zoom
+ - Shift+scroll to change animation speed
